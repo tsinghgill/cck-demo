@@ -19,10 +19,15 @@ def list_subjects():
     else:
         raise Exception(f"Error listing subjects: {response.text}")
 
-def get_schema(subject):
+def get_schema(subject, schema_id=None):
     print("get_schema")
+    if schema_id is None:
+        version = "latest"
+    else:
+        version = str(schema_id)
+    
     response = requests.get(
-        f'{SCHEMA_REGISTRY_URL}/subjects/{subject}/versions/latest',
+        f'{SCHEMA_REGISTRY_URL}/subjects/{subject}/versions/{version}',
         auth=(SCHEMA_REGISTRY_API_KEY, SCHEMA_REGISTRY_API_SECRET)
     )
     print("get_schema response", response)
@@ -31,6 +36,7 @@ def get_schema(subject):
         return response.json()
     else:
         raise Exception(f"Error getting schema: {response.text}")
+
 
 def get_schema_id(subject):
     schema = get_schema(subject)

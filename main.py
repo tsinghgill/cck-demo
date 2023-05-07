@@ -1,5 +1,7 @@
 from json_bin import get_schema_id_from_bin, update_schema_id_in_bin
 from schema_registry import create_or_update_schema, get_schema, list_subjects, get_schema_id
+from datadog import send_datadog_event
+from helpers import get_updated_data
 
 import logging
 import sys
@@ -9,21 +11,11 @@ from turbine.runtime import Runtime
 
 logging.basicConfig(level=logging.INFO)
 
-
 def transform(records: RecordList) -> RecordList:
     logging.info(f"processing {len(records)} record(s)")
     for record in records:
         logging.info(f"input: {record}")
         try:
-
-            # List all subjects in the Schema Registry
-            subjects = list_subjects()
-            print("Subjects:", subjects)
-
-            # Get the latest schema for a subject
-            schema = get_schema("purchase-value")
-            print("Schema:", schema)
-
             # Get the schema ID from schema registry for a subject
             schema_id = get_schema_id("purchase-value")
             print("schema_id:", schema_id)
@@ -35,18 +27,35 @@ def transform(records: RecordList) -> RecordList:
             # Check if initial deployment
             if schema_id_from_bin is None:
                 print(f"Initial Deployment. update_schema_id_in_bin: {schema_id}")
-                update_schema_id_in_bin(schema_id)
+                schema_id_from_bin = update_schema_id_in_bin(schema_id)
 
             # Check if schema changed
             if schema_id_from_bin != schema_id:
-                print(f"Schema Changed. update_schema_id_in_bin: {schema_id}")
-                update_schema_id_in_bin(schema_id)
-                # Do stuff
+                # Alert a 3rd party about schema change
+                send_datadog_event("Schema Change", "A schema was detected")
+                # Get the old schema
+                schema = get_schema("purchase-value")
+                print("Schema:", schema)
 
-            # Create or update a schema for a subject using an Avro (.avsc) file
-            schema_file = "./schemas/purchase.avsc"
-            schema_id = create_or_update_schema("purchase-value", schema_file)
-            print("New schema ID:", schema_id)
+                # Transform the incoming record based on the retrieved schema
+                updated_data = get_updated_data(record.value["payload"], schema)
+                record.value["payload"]["after"] = updated_data
+                print("Transformed record:", record)
+
+            # Other Examples:
+
+            # List all subjects in the Schema Registry
+            # subjects = list_subjects()
+            # print("Subjects:", subjects)
+
+            # Get the latest schema for a subject
+            # schema = get_schema("purchase-value")
+            # print("Schema:", schema)
+
+            # # Create or update a schema for a subject using an Avro (.avsc) file
+            # schema_file = "./schemas/purchase.avsc"
+            # schema_id = create_or_update_schema("purchase-value", schema_file)
+            # print("New schema ID:", schema_id)
 
             logging.info(f"output: {record}")
         except Exception as e:
@@ -74,6 +83,8 @@ class App:
             # Specify which secrets in environment variables should be passed into the Process.
             turbine.register_secrets("BIN_ID")
             turbine.register_secrets("JSON_BIN_API_KEY")
+            turbine.register_secrets("DATADOG_API_KEY")
+
             
             turbine.register_secrets("SCHEMA_REGISTRY_API_KEY")
             turbine.register_secrets("SCHEMA_REGISTRY_API_SECRET")
